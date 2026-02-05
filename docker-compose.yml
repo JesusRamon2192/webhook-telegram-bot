@@ -1,0 +1,12 @@
+services:
+  webhook:
+    build: .
+    container_name: webhook-listener
+    restart: unless-stopped
+    environment:
+      - NGROK_AUTHTOKEN=374Q0wyKu1DJNhUpiFHSAhugvpJ_3iExBjW7Q8kGYsxGjk3F8
+    volumes:
+      - /home/pi/nextcloud-data/jesus/files/webhookPayloads:/app/received_webhooks
+    ports:
+      - "5000:5000"
+
