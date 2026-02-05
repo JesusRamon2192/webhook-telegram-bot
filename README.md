@@ -22,4 +22,4 @@ Cuando se recibe una petición POST con un cuerpo JSON, el código realiza lo si
 3.  **Guardado (IMPORTANTE)**: Guarda el contenido del JSON en un archivo dentro del directorio `received_webhooks`.
     *   **¿Modifica el contenido?**: **NO.** El código **no filtra, parsea para extraer campos específicos, ni modifica** la estructura de los datos recibidos.
     *   **Formato**: Lo único que hace es **re-formatear** el JSON para que sea legible (pretty-print) con una indentación de 2 espacios (`json.dump(..., indent=2)`). Aparte de este cambio estético (espacios y saltos de línea), **la información y la estructura se mantienen idénticas** a lo que se envió en la petición original. Todo el contenido recibido se vuelca al archivo.
-4.  **Notificación**: Lee las últimas líneas del JSON formateado y envía una notificación a Telegram junto con el archivo completo.
+4.  **Notificación**: Lee las últimas líneas del JSON formateado y envía una notificación a Telegram al bot @webhook2192_bot junto con el archivo completo.
