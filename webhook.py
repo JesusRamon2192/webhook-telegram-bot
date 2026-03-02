@@ -219,9 +219,16 @@ def webhook_listener():
     if not data:
         return jsonify({"status": "error", "message": "JSON inválido"}), 400
 
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S-%f")
+    now = datetime.utcnow()
+    date_str = now.strftime("%Y-%m-%d")
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S-%f")
+    
+    # Carpeta por fecha
+    daily_dir = WEBHOOKS_DIR / date_str
+    daily_dir.mkdir(parents=True, exist_ok=True)
+
     file_name = f"{timestamp}.json"
-    file_path = WEBHOOKS_DIR / file_name
+    file_path = daily_dir / file_name
 
     try:
         with file_path.open("w", encoding="utf-8") as f:

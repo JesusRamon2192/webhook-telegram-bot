@@ -10,7 +10,7 @@ services:
       - .env
 
     volumes:
-      - /home/pi/nextcloud-data/jesus/files/webhookPayloads:/app/received_webhooks
+      - ./received_webhooks:/app/received_webhooks
       - ./replied_users.json:/app/replied_users.json
 
     ports:

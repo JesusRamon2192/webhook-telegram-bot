@@ -1,2 +1,24 @@
-*.env
+# Sensitive data
+.env
 replied_users.json
+received_webhooks/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# Docker
+.docker/
+*.log
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+.vscode/
