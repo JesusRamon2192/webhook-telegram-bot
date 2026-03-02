@@ -16,17 +16,19 @@ from pyngrok import ngrok, conf
 PORT = 5000
 BASE_DIR = Path(__file__).resolve().parent
 WEBHOOKS_DIR = BASE_DIR / "received_webhooks"
+USERS_FILE = BASE_DIR / "replied_users.json"
 
 # --------------------------------------------------
 # Variables de entorno
 # --------------------------------------------------
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Opcional: ID inicial si el archivo está vacío
+INITIAL_ADMIN_ID = os.getenv("TELEGRAM_CHAT_ID")
 NGROK_AUTHTOKEN = os.getenv("NGROK_AUTHTOKEN")
 
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-    raise RuntimeError("Faltan TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID")
+if not TELEGRAM_BOT_TOKEN:
+    raise RuntimeError("Falta TELEGRAM_BOT_TOKEN")
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
@@ -56,11 +58,50 @@ app = Flask(__name__)
 
 def setup_directories():
     WEBHOOKS_DIR.mkdir(parents=True, exist_ok=True)
+    if not USERS_FILE.exists():
+        with USERS_FILE.open("w") as f:
+            json.dump({}, f)
 
+def get_users_dict():
+    """Devuelve el dict de usuarios: {'id': True/Metadata, ...}"""
+    try:
+        if not USERS_FILE.exists():
+            return {}
+        with USERS_FILE.open("r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_user(chat_id, first_name="Usuario"):
+    users = get_users_dict()
+    str_id = str(chat_id)
+    
+    # Si ya existe, no hacemos nada (o actualizamos metadata si quisieramos)
+    if str_id in users:
+        return False
+    
+    # Agregamos nuevo usuario
+    users[str_id] = {"name": first_name, "date": datetime.now().isoformat()}
+    with USERS_FILE.open("w") as f:
+        json.dump(users, f, indent=2, ensure_ascii=False)
+    return True
 
 def start_ngrok():
     public_url = ngrok.connect(PORT).public_url
     logger.info("Ngrok activo → %s/webhook", public_url)
+
+    # Registrar Webhook en Telegram para recibir mensajes
+    webhook_url = f"{public_url}/telegram_webhook"
+    try:
+        r = requests.post(
+            f"{TELEGRAM_API_URL}/setWebhook",
+            json={"url": webhook_url},
+            timeout=10
+        )
+        r.raise_for_status()
+        logger.info("Webhook de Telegram registrado: %s", webhook_url)
+    except Exception as e:
+        logger.error("Error registrando webhook de Telegram: %s", e)
 
 
 def json_tail(data, max_lines=30):
@@ -69,32 +110,107 @@ def json_tail(data, max_lines=30):
     return "\n".join(lines[-max_lines:])
 
 
-def send_telegram_message(text):
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text[:4096]
-    }
-    r = requests.post(
-        f"{TELEGRAM_API_URL}/sendMessage",
-        json=payload,
-        timeout=10
-    )
-    r.raise_for_status()
+def send_telegram_message(text, chat_id=None):
+    """
+    Si chat_id se especifica, envía solo a ese ID.
+    Si no, envía a TODOS los usuarios en replied_users.json.
+    """
+    if chat_id:
+        targets = [str(chat_id)]
+    else:
+        users = get_users_dict()
+        targets = list(users.keys())
+        # Fallback a env var si no hay nadie en el archivo
+        if not targets and INITIAL_ADMIN_ID:
+            targets = [INITIAL_ADMIN_ID]
+
+    if not targets:
+        logger.warning("No hay destinatarios para enviar el mensaje.")
+        return
+
+    for target_id in targets:
+        payload = {
+            "chat_id": target_id,
+            "text": text[:4096]
+        }
+        try:
+            r = requests.post(
+                f"{TELEGRAM_API_URL}/sendMessage",
+                json=payload,
+                timeout=10
+            )
+            r.raise_for_status()
+        except Exception as e:
+            logger.error("Error enviando mensaje a %s: %s", target_id, e)
 
 
-def send_telegram_file(file_path: Path):
-    with file_path.open("rb") as f:
-        r = requests.post(
-            f"{TELEGRAM_API_URL}/sendDocument",
-            data={"chat_id": TELEGRAM_CHAT_ID},
-            files={"document": f},
-            timeout=20
-        )
-        r.raise_for_status()
+def send_telegram_file(file_path: Path, chat_id=None):
+    if chat_id:
+        targets = [str(chat_id)]
+    else:
+        users = get_users_dict()
+        targets = list(users.keys())
+        if not targets and INITIAL_ADMIN_ID:
+            targets = [INITIAL_ADMIN_ID]
+
+    if not targets:
+        return
+
+    try:
+        file_content = file_path.read_bytes()
+    except Exception as e:
+        logger.error("No se pudo leer archivo: %s", e)
+        return
+
+    for target_id in targets:
+        try:
+            r = requests.post(
+                f"{TELEGRAM_API_URL}/sendDocument",
+                data={"chat_id": target_id},
+                files={"document": (file_path.name, file_content)},
+                timeout=20
+            )
+            r.raise_for_status()
+        except Exception as e:
+            logger.error("Error enviando archivo a %s: %s", target_id, e)
 
 # --------------------------------------------------
-# Webhook
+# Webhook Listener & Telegram Command Handler
 # --------------------------------------------------
+
+@app.route("/telegram_webhook", methods=["POST"])
+def telegram_listener():
+    data = request.get_json(silent=True)
+    if not data: 
+        return "OK", 200
+
+    # Log de debug
+    logger.info("Telegram msg: %s", json.dumps(data))
+
+    if "message" in data:
+        msg = data["message"]
+        chat_id = msg.get("chat", {}).get("id")
+        user_first_name = msg.get("from", {}).get("first_name", "Usuario")
+        
+        if not chat_id:
+            return "OK", 200
+
+        # AUTO-SUBSCRIBE
+        is_new = save_user(chat_id, user_first_name)
+        
+        if is_new:
+            welcome_text = (
+                f"👋 ¡Hola {user_first_name}!\n"
+                "✅ Te he guardado en mi lista de destinatarios.\n"
+                "Recibirás todos los webhooks que lleguen a partir de ahora."
+            )
+            send_telegram_message(welcome_text, chat_id)
+        else:
+            # Opcional: confirmar que sigue vivo sin spammear
+            # send_telegram_message("🤖 Sigo aquí, y sigues suscrito.", chat_id)
+            pass
+
+    return "OK", 200
 
 @app.route("/webhook", methods=["POST"])
 def webhook_listener():
@@ -114,7 +230,6 @@ def webhook_listener():
         logger.info("Webhook guardado: %s", file_name)
 
         tail = json_tail(data)
-
         message = (
             "Webhook recibido\n\n"
             f"UTC: {timestamp}\n"
@@ -123,12 +238,9 @@ def webhook_listener():
             f"{tail}"
         )
 
-        try:
-            send_telegram_message(message)
-            send_telegram_file(file_path)
-            logger.info("Enviado a Telegram correctamente")
-        except Exception as tg_err:
-            logger.error("Error enviando a Telegram: %s", tg_err)
+        send_telegram_message(message)
+        send_telegram_file(file_path)
+        logger.info("Enviado a Telegram correctamente")
 
         return jsonify({
             "status": "success",
