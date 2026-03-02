@@ -104,10 +104,10 @@ def start_ngrok():
         logger.error("Error registrando webhook de Telegram: %s", e)
 
 
-def json_tail(data, max_lines=30):
+def json_head(data, max_lines=30):
     text = json.dumps(data, indent=2, ensure_ascii=False)
     lines = text.splitlines()
-    return "\n".join(lines[-max_lines:])
+    return "\n".join(lines[:max_lines])
 
 
 def send_telegram_message(text, chat_id=None):
@@ -229,13 +229,13 @@ def webhook_listener():
 
         logger.info("Webhook guardado: %s", file_name)
 
-        tail = json_tail(data)
+        head = json_head(data)
         message = (
             "Webhook recibido\n\n"
             f"UTC: {timestamp}\n"
             f"Archivo: {file_name}\n\n"
-            "Últimas líneas:\n"
-            f"{tail}"
+            "Primeras líneas:\n"
+            f"{head}"
         )
 
         send_telegram_message(message)
