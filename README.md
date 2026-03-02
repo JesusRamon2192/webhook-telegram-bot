@@ -2,14 +2,14 @@
 
 Este proyecto implementa un servidor simple en Flask (`webhook.py`) diseñado para recibir webhooks (peticiones HTTP POST), guardarlos en archivos locales y enviar notificaciones a Telegram.
 
-![Ejemplo de Payload](screenshots/payload.png)
-
 ## Estructura y Docker
 
 El proyecto está contenerizado usando **Docker**.
 
-- **Dockerfile**: Define la imagen base (`python:3.11-slim`), instala las dependencias y prepara el entorno.
-- **docker-compose.yml**: Orquesta el servicio. Define un volumen (`webhookPayloads`) que mapea una carpeta del host (`/home/pi/nextcloud-data/jesus/files/webhookPayloads`) al directorio `/app/received_webhooks` dentro del contenedor. Esto asegura que los archivos JSON recibidos persistan en el disco del servidor host incluso si el contenedor se reinicia.
+- **Dockerfile**: Define la imagen base (`python:3.11-slim`), instala las dependencias (`flask`, `pyngrok`, `requests`) y prepara el entorno.
+- **docker-compose.yml**: Orquesta el servicio. Mapea volúmenes locales para persistencia:
+    - `./received_webhooks`: Donde se guardan los payloads recibidos.
+    - `./replied_users.json`: Base de datos simple de usuarios suscritos en Telegram.
 
 ## Funcionamiento del Código (`webhook.py`)
 
@@ -24,27 +24,20 @@ Para que el servidor local sea accesible desde internet (necesario para recibir 
 
 ### Manejo de Archivos JSON
 
-Cuando se recibe una petición POST con un cuerpo JSON en `/webhook`, el código realiza lo siguiente:
+Cuando se recibe una petición POST con un cuerpo JSON, el código realiza lo siguiente:
 
-1.  **Recepción y Validación**: Intenta parsear el cuerpo de la petición como JSON. Si no es un JSON válido, devuelve un error.
+1.  **Recepción y Validación**: Intenta parsear el cuerpo de la petición como JSON (`request.get_json()`). Si no es un JSON válido, devuelve un error.
 2.  **Generación de Nombre**: Crea un nombre de archivo único basado en la fecha y hora actual UTC (ej. `2023-10-27_10-00-00-123456.json`).
-3.  **Guardado (IMPORTANTE)**: Guarda el contenido del JSON en un archivo dentro del directorio `received_webhooks`, organizado por carpetas según la fecha.
+3.  **Guardado (IMPORTANTE)**: Guarda el contenido del JSON en un archivo dentro del directorio `received_webhooks`.
     *   **¿Modifica el contenido?**: **NO.** El código **no filtra, parsea para extraer campos específicos, ni modifica** la estructura de los datos recibidos.
-    *   **Formato**: Lo único que hace es **re-formatear** el JSON para que sea legible (pretty-print). La información y la estructura se mantienen idénticas.
-4.  **Notificación**: Envía una notificación a Telegram junto con el archivo completo.
-
-### Suscripción Automática
-
-El bot permite que nuevos usuarios se suscriban simplemente enviando un mensaje al bot.
-1.  Cuando envías un mensaje (ej. `/start`), el bot guarda tu `chat_id`.
-2.  Recibirás una confirmación de bienvenida.
-3.  A partir de ese momento, recibirás todos los webhooks que lleguen al sistema.
+    *   **Formato**: Lo único que hace es **re-formatear** el JSON para que sea legible (pretty-print) con una indentación de 2 espacios (`json.dump(..., indent=2)`). Aparte de este cambio estético (espacios y saltos de línea), **la información y la estructura se mantienen idénticas** a lo que se envió en la petición original. Todo el contenido recibido se vuelca al archivo.
+4.  **Notificación**: Lee las últimas líneas del JSON formateado y envía una notificación a Telegram al bot @webhook2192_bot junto con el archivo completo.
 
 ## Privacidad y Visibilidad de los Datos
 
 Es importante saber qué ocurre con los datos que recibe este webhook:
 
-*   **¿Son públicos los datos?**: **NO**. Los datos recibidos **no se publican** en ninguna web ni son accesibles por terceros de forma abierta.
+*   **¿Son públicos los datos?**: **NO**. Los datos recibidos **no se publican** en ninguna web ni son accesibles por terceros.
 *   **¿Dónde van los datos?**:
     1.  **Almacenamiento Local**: Se guardan en el servidor donde corre Docker (en la carpeta mapeada).
     2.  **Telegram**: Se envían de forma privada a los usuarios suscritos en el bot.
