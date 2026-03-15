@@ -2,6 +2,8 @@
 
 Este proyecto implementa un servidor simple en Flask (`webhook.py`) diseñado para recibir webhooks (peticiones HTTP POST), guardarlos en archivos locales y enviar notificaciones a Telegram.
 
+![Ejemplo de Payload](screenshots/payload.png)
+
 ## Estructura y Docker
 
 El proyecto está contenerizado usando **Docker**.
